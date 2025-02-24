@@ -31,11 +31,12 @@ class Side:
             #diff += pow(self.norm100[i]+s.norm100[j], 2)
             diff += abs(self.norm100[i]+s.norm100[j])
         diff /= 100
-        if diff < 6:
+        '''if diff < 6:
             print("diff: %.1f %d %d" % (diff, self.length, s.length) )
             for i in range(100):
                 j = 99-i
                 print( "%.2f %.2f %.2f" % (self.norm100[i], s.norm100[i], -s.norm100[j]) )
+        '''
         return diff
 
 class Puzzle:
@@ -53,6 +54,20 @@ class Puzzle:
                     bestJ = j
         #print("best diff %.1f" % bestDiff)
         return ( bestDiff, bestI, bestJ )
+
+    def match2(self, puzzles, indSide, indStart):
+        bestDiff = 1e5
+        bestJ, bestSideJ  = 0, 0
+        for j in range(indStart,len(puzzles)):
+            p = puzzles[j]
+            for jj in range(len(p.sides)):
+                diff = self.sides[indSide].match(p.sides[jj])
+                if diff < bestDiff:
+                    bestDiff = diff
+                    bestJ = j
+                    bestSideJ = jj
+        #print("best diff %.1f" % bestDiff)
+        return ( bestDiff, bestJ, bestSideJ )
 
 
 # Функция для загрузки и обработки изображения
@@ -96,7 +111,6 @@ def find_puzzle_pieces2(edges):
     cv2.drawContours(img, filtered_cont, -1, (0, 255, 0), 3)
 
     resultPuzzles = []
-    d1, d2 = ( 5, 10 )
     for c in filtered_cont:
         size = len(c)
         flags_arr = []
@@ -112,11 +126,11 @@ def find_puzzle_pieces2(edges):
             p = p[0]
             dist = math.sqrt(math.pow(p[1]-avX, 2) + math.pow(p[0]-avY,2))
             dist_array.append(round(dist))
-        print()
+        #print()
         globalAverage = np.average(dist_array)
         minInd = np.argmin(dist_array)
         da = [0] * len(dist_array)
-        print(len(da), len(dist_array))#1
+        #print(len(da), len(dist_array))#1
         da[0:]=dist_array[minInd:]
         da.extend(dist_array[:minInd])
         #da - смещен то есть чтобы получить индекс minInd в оригинале соответсвует 0, то есть к da надо прибавить minInd
@@ -124,7 +138,7 @@ def find_puzzle_pieces2(edges):
 
         (peaksMax, propertiesMax) = find_peaks(da, prominence=6, distance=10)#, threshold=6)#
 
-        print("peaks:", peaksMax)
+        #print("peaks:", peaksMax)
 
         delta_arr = []
         for k in range(len(peaksMax)-1):
@@ -132,9 +146,9 @@ def find_puzzle_pieces2(edges):
                 printf("skip")
                 continue
             delta_arr.append([peaksMax[k],(peaksMax[k+1]-peaksMax[k])/size*100])
-            print("%d %.2f" % ( peaksMax[k], delta_arr[-1][1]) )
+            #print("%d %.2f" % ( peaksMax[k], delta_arr[-1][1]) )
         delta_arr.append([peaksMax[-1],(size-peaksMax[-1]+peaksMax[0])/size*100])
-        print("%d %.2f" % ( peaksMax[-1], (delta_arr[-1][1]) ))
+        #print("%d %.2f" % ( peaksMax[-1], (delta_arr[-1][1]) ))
         #print(delta_arr[0])
 
         bestInd = 0
@@ -147,14 +161,13 @@ def find_puzzle_pieces2(edges):
                 bestInd = k
 
         s = len(delta_arr)
-        print("best index %d best val %.2f  len: %d   minIndex %d" % (bestInd, bestVal, s, minInd))
+        #print("best index %d best val %.2f  len: %d   minIndex %d" % (bestInd, bestVal, s, minInd))
         index_arr = []
         # теперь надо положить 1ый индекс, который для лучшей дельты, и потом класть те которые в интервале от 20 до 30
 
         curr_delta = delta_arr[bestInd]
         for k in range(1,s):
             i = (k+bestInd) % s
-            #if curr_delta >= 18 and curr_delta <= 33:
             if curr_delta[1] >= 20 and curr_delta[1] <= 30:
                 index_arr.append(curr_delta)
                 curr_delta = delta_arr[i]
@@ -164,14 +177,14 @@ def find_puzzle_pieces2(edges):
 
         if len(index_arr) != 4:
             continue
-        print(index_arr)
+        #print(index_arr)
         puzzle = Puzzle()
         s = len(dist_array)
         for k in range(4):
             points = []
             indStart = index_arr[k][0]
             indEnd = index_arr[(k+1)%4][0]
-            print("original %d   da %d" % ((indStart+minInd)%s, indStart) )
+            #print("original %d   da %d" % ((indStart+minInd)%s, indStart) )
             if indEnd < indStart:
                 indEnd += s
             for j in range(indStart,indEnd):
@@ -195,19 +208,13 @@ def sortFunc(e):
 def matchPuzzles(puzzles):
     result = []
     for i in range(len(puzzles)):
-        bestDiff = 1e5
-        bestPuzzleIndex, bestSideI, bestSideJ  = 0, 0, 0
-        for j in range(i+1,len(puzzles)):
-            (diff, bi, bj) = puzzles[i].match(puzzles[j])
-            if (diff < bestDiff):
-                bestDiff = diff
-                bestPuzzleIndex, bestSideI, bestSideJ = j, bi, bj
-                #print(i, j, diff)
-                #result.append({"diff" : diff, "i" : i, "j" : j, "bi" : bi, "bj" : bj })
-        result.append({"diff" : bestDiff, 
-            "i" : i, "j" : bestPuzzleIndex, 
-            "bi" : bestSideI, "bj" : bestSideJ,
-            "imI" : puzzles[i].imageIndex, "imJ" : puzzles[bestPuzzleIndex].imageIndex })
+        p = puzzles[i]
+        for ii in range(4):
+            (diff, bestJ, bestSideJ) = puzzles[i].match2(puzzles, ii, i+1)
+            result.append({"diff" : diff,
+                "i" : i, "j" : bestJ,
+                "bi" : ii, "bj" : bestSideJ,
+                "imI" : puzzles[i].imageIndex, "imJ" : puzzles[bestJ].imageIndex })
     result.sort(key=sortFunc)
     return result
 
@@ -238,9 +245,6 @@ def draw(images, puzzles, result):
         if ch == 27:
             break
 
-#def extractPuzzles(image_path):
-#    return bin, puzzles
-
 # Основная функция
 def main(paths):
     puzzles = []
@@ -265,7 +269,7 @@ def main(paths):
     cv2.destroyAllWindows()
 
 # Запуск кода с изображением
-images = ["00.png"]#, "01.png", "02.png"]
+images = ["00.png", "01.png", "02.png"]
 cv2.namedWindow('img', 0)
 cv2.namedWindow('Puzzle Connections', 0)
 cv2.namedWindow('Puzzle Connections2', 0)
