@@ -16,7 +16,7 @@ class Side:
         self.norm100 = []
         for p in points:
             x0, y0 = (p[0], p[1])
-            d = ((y2-y1)*x0 - (x2-x1)*y0 + x2*y1 - y2*x1) / self.length
+            d = ((y2-y1)*x0 - (x2-x1)*y0 + x2*y1 - y2*x1)# / self.length
             self.normP.append(d)
         for i in range(100):
             ind = min( len(self.normP)-1, round(i/100*len(self.normP)))
@@ -25,10 +25,11 @@ class Side:
     def match(self, s):
         diff = 0
         if abs(self.length-s.length) > 10:
-            return 10 
+            return 1e5
         for i in range(100):
             j = 99-i
-            diff += pow(self.norm100[i]+s.norm100[j], 2)
+            #diff += pow(self.norm100[i]+s.norm100[j], 2)
+            diff += abs(self.norm100[i]+s.norm100[j])
         diff /= 100
         if diff < 6:
             print("diff: %.1f %d %d" % (diff, self.length, s.length) )
@@ -43,14 +44,14 @@ class Puzzle:
     def match(self, p):
         bestDiff = 1e5
         bestI, bestJ  = 0, 0
-        for i in range(len(p.sides)):
-            for j in range(len(self.sides)):
-                diff = p.sides[i].match(p.sides[j])
+        for i in range(len(self.sides)):
+            for j in range(len(p.sides)):
+                diff = self.sides[i].match(p.sides[j])
                 if diff < bestDiff:
                     bestDiff = diff
                     bestI = i
                     bestJ = j
-        print("best diff %.1f" % bestDiff)
+        #print("best diff %.1f" % bestDiff)
         return ( bestDiff, bestI, bestJ )
 
 
@@ -203,7 +204,10 @@ def matchPuzzles(puzzles):
                 bestPuzzleIndex, bestSideI, bestSideJ = j, bi, bj
                 #print(i, j, diff)
                 #result.append({"diff" : diff, "i" : i, "j" : j, "bi" : bi, "bj" : bj })
-        result.append({"diff" : bestDiff, "i" : i, "j" : bestPuzzleIndex, "bi" : bestSideI, "bj" : bestSideJ })
+        result.append({"diff" : bestDiff, 
+            "i" : i, "j" : bestPuzzleIndex, 
+            "bi" : bestSideI, "bj" : bestSideJ,
+            "imI" : puzzles[i].imageIndex, "imJ" : puzzles[bestPuzzleIndex].imageIndex })
     result.sort(key=sortFunc)
     return result
 
@@ -211,34 +215,58 @@ def drawContour(img, cont, color, radius):
     for p in cont:
         cv2.circle(img, p, radius, color, -1)
 
-def draw(bin, puzzles, result):
+def draw(images, puzzles, result):
     for it in result:
         cont1 = puzzles[it["i"]].sides[it["bi"]].points
         cont2 = puzzles[it["j"]].sides[it["bj"]].points
-        img = cv2.cvtColor(bin, cv2.COLOR_GRAY2BGR)
-        drawContour(img, cont1, (0, 255, 0), 3)
-        drawContour(img, cont2, (0, 0, 255), 3)
+
+        bin1 = images[it["imI"]]
+        img1 = cv2.cvtColor(bin1, cv2.COLOR_GRAY2BGR)
+        if it["imI"] != it["imJ"]:
+            bin2 = images[it["imJ"]]
+            img2 = cv2.cvtColor(bin2, cv2.COLOR_GRAY2BGR)
+        else:
+            img2 = img1
+
+        drawContour(img1, cont1, (0, 255, 0), 5)
+        drawContour(img2, cont2, (0, 0, 255), 5)
         print(it["diff"])
-        cv2.imshow("Puzzle Connections", img)
+        cv2.imshow("Puzzle Connections", img1)
+        if it["imI"] != it["imJ"]:
+            cv2.imshow("Puzzle Connections2", img2)
         ch = cv2.waitKey(0)
         if ch == 27:
             break
 
-# Основная функция
-def main(image_path):
-    img, bin = load_and_preprocess(image_path)
+#def extractPuzzles(image_path):
+#    return bin, puzzles
 
-    puzzles = find_puzzle_pieces2(bin)
+# Основная функция
+def main(paths):
+    puzzles = []
+    images = []
+    for i in range(len(paths)):
+        imagePath = paths[i]
+        img, bin = load_and_preprocess(imagePath)
+        puzzlesLocal = find_puzzle_pieces2(bin)
+        print(imagePath, len(puzzlesLocal))
+        for it in puzzlesLocal:
+            it.imageIndex = i
+        puzzles.extend(puzzlesLocal)
+        images.append(bin)
+
     result = matchPuzzles(puzzles)
-    draw(bin, puzzles, result)
+    print( len(puzzles), len(result))
+    draw(images, puzzles, result)
 
     # Отображение результата
-    cv2.imshow("Puzzle Connections", colorBin)
+    #cv2.imshow("Puzzle Connections", colorBin)
     #cv2.waitKey(0)
     cv2.destroyAllWindows()
 
 # Запуск кода с изображением
-image_path = "00.png"  # Укажите путь к изображению
+images = ["00.png"]#, "01.png", "02.png"]
 cv2.namedWindow('img', 0)
 cv2.namedWindow('Puzzle Connections', 0)
-main(image_path)
+cv2.namedWindow('Puzzle Connections2', 0)
+main(images)
