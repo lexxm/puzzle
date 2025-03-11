@@ -11,7 +11,6 @@ class Side:
         dx = x1-x2
         dy = y1-y2
         self.length = math.sqrt(dx*dx+dy*dy)
-        #print("x1 %d, x2 %d , y1 %d y2 %d length: %d" % ( x1, x2, y1, y2, self.length) )
         self.normP = []
         self.norm100 = []
         for p in points:
@@ -28,15 +27,8 @@ class Side:
             return 1e5
         for i in range(100):
             j = 99-i
-            #diff += pow(self.norm100[i]+s.norm100[j], 2)
             diff += abs(self.norm100[i]+s.norm100[j])
         diff /= 100
-        '''if diff < 6:
-            print("diff: %.1f %d %d" % (diff, self.length, s.length) )
-            for i in range(100):
-                j = 99-i
-                print( "%.2f %.2f %.2f" % (self.norm100[i], s.norm100[i], -s.norm100[j]) )
-        '''
         return diff
 
 class Puzzle:
@@ -69,6 +61,31 @@ class Puzzle:
         #print("best diff %.1f" % bestDiff)
         return ( bestDiff, bestJ, bestSideJ )
 
+    def sort(self):
+        glX, glY = 0, 0
+        for i in range(4):
+            glX += self.sides[i].points[0][0]
+            glY += self.sides[i].points[0][1]
+
+        temp = []
+        glX /= 4
+        glY /= 4
+        for it in self.sides:
+            avX, avY = 0, 0
+            for p in it.points:
+                avX += p[0]
+                avY += p[1]
+            avX /= len(it.points)
+            avY /= len(it.points)
+            angle = math.atan2(avY-glY, avX-glX)
+            if angle < -math.pi*3/4 or angle > math.pi*3/4:
+                angle = -math.pi
+            it.angle = angle
+            temp.append([angle, it])
+
+        temp.sort(key=lambda x:x[0])
+        for it in temp:
+            self.sides.append(it[1])
 
 # Функция для загрузки и обработки изображения
 def load_and_preprocess(image_path):
@@ -138,12 +155,10 @@ def find_puzzle_pieces2(edges):
 
         (peaksMax, propertiesMax) = find_peaks(da, prominence=6, distance=10)#, threshold=6)#
 
-        #print("peaks:", peaksMax)
-
         delta_arr = []
         for k in range(len(peaksMax)-1):
             if len(peaksMax) == 8 and k == maxInd:
-                printf("skip")
+                print("skip")
                 continue
             delta_arr.append([peaksMax[k],(peaksMax[k+1]-peaksMax[k])/size*100])
             #print("%d %.2f" % ( peaksMax[k], delta_arr[-1][1]) )
@@ -184,7 +199,6 @@ def find_puzzle_pieces2(edges):
             points = []
             indStart = index_arr[k][0]
             indEnd = index_arr[(k+1)%4][0]
-            #print("original %d   da %d" % ((indStart+minInd)%s, indStart) )
             if indEnd < indStart:
                 indEnd += s
             for j in range(indStart,indEnd):
@@ -193,6 +207,8 @@ def find_puzzle_pieces2(edges):
                 points.append(p)
             side = Side(points)
             puzzle.sides.append(side)
+
+        puzzle.sort()
         resultPuzzles.append(puzzle)
         # 1 найти наиболее близкий к 25 в диапазона 25-30, если нет такого, то пропускае этот элемент 
         # по хорошему, надо найти вариант, который начинает с 45 градусов, либо просто игнорируем самую большую вершину, 
@@ -202,8 +218,8 @@ def find_puzzle_pieces2(edges):
     cv2.imshow('img',img)
     return resultPuzzles
 
-def sortFunc(e):
-  return e["diff"]
+#def sortFunc(e):
+#  return e["diff"]
 
 def matchPuzzles(puzzles):
     result = []
@@ -215,7 +231,8 @@ def matchPuzzles(puzzles):
                 "i" : i, "j" : bestJ,
                 "bi" : ii, "bj" : bestSideJ,
                 "imI" : puzzles[i].imageIndex, "imJ" : puzzles[bestJ].imageIndex })
-    result.sort(key=sortFunc)
+    #result.sort(key=sortFunc)
+    result.sort(key=lambda x:x["diff"])
     return result
 
 def drawContour(img, cont, color, radius):
@@ -245,7 +262,6 @@ def draw(images, puzzles, result):
         if ch == 27:
             break
 
-# Основная функция
 def main(paths):
     puzzles = []
     images = []
@@ -263,12 +279,8 @@ def main(paths):
     print( len(puzzles), len(result))
     draw(images, puzzles, result)
 
-    # Отображение результата
-    #cv2.imshow("Puzzle Connections", colorBin)
-    #cv2.waitKey(0)
     cv2.destroyAllWindows()
 
-# Запуск кода с изображением
 images = ["00.png", "01.png", "02.png"]
 cv2.namedWindow('img', 0)
 cv2.namedWindow('Puzzle Connections', 0)
