@@ -3,6 +3,8 @@ import numpy as np
 from scipy.signal import argrelextrema, find_peaks
 import math
 
+MAX_DIFF=1e5
+
 class Side:
     def __init__(self, points):
         self.points = points
@@ -23,8 +25,8 @@ class Side:
 
     def match(self, s):
         diff = 0
-        if abs(self.length-s.length) > 10:
-            return 1e5
+        if abs(self.length-s.length) > 5:
+            return MAX_DIFF
         for i in range(100):
             j = 99-i
             diff += abs(self.norm100[i]+s.norm100[j])
@@ -34,8 +36,9 @@ class Side:
 class Puzzle:
     def __init__(self):
         self.sides = []
+        #self.sideShift = 0 
     def match(self, p):
-        bestDiff = 1e5
+        bestDiff = MAX_DIFF
         bestI, bestJ  = 0, 0
         for i in range(len(self.sides)):
             for j in range(len(p.sides)):
@@ -48,7 +51,7 @@ class Puzzle:
         return ( bestDiff, bestI, bestJ )
 
     def match2(self, puzzles, indSide, indStart):
-        bestDiff = 1e5
+        bestDiff = MAX_DIFF
         bestJ, bestSideJ  = 0, 0
         for j in range(indStart,len(puzzles)):
             p = puzzles[j]
@@ -84,6 +87,7 @@ class Puzzle:
             temp.append([angle, it])
 
         temp.sort(key=lambda x:x[0])
+        self.sides = []
         for it in temp:
             self.sides.append(it[1])
 
@@ -214,35 +218,180 @@ def find_puzzle_pieces2(edges):
         # по хорошему, надо найти вариант, который начинает с 45 градусов, либо просто игнорируем самую большую вершину, 
         # и дальше по основному алгоритмуа остальные сч
 
-        print()
+        #print()
     cv2.imshow('img',img)
     return resultPuzzles
-
-#def sortFunc(e):
-#  return e["diff"]
 
 def matchPuzzles(puzzles):
     result = []
     for i in range(len(puzzles)):
+        print("process match %.1f %%" % (100*(i+1)/len(puzzles)), end='\r')
         p = puzzles[i]
         for ii in range(4):
             (diff, bestJ, bestSideJ) = puzzles[i].match2(puzzles, ii, i+1)
+            if diff == MAX_DIFF:
+                continue
+            # это matchResult
             result.append({"diff" : diff,
-                "i" : i, "j" : bestJ,
-                "bi" : ii, "bj" : bestSideJ,
+                "i" : i, "j" : bestJ,# index puzzle
+                "si" : ii, "sj" : bestSideJ,# si side for i, sj - side for j
                 "imI" : puzzles[i].imageIndex, "imJ" : puzzles[bestJ].imageIndex })
-    #result.sort(key=sortFunc)
+    print()
     result.sort(key=lambda x:x["diff"])
     return result
+
+def getNeighbours(indIm, indPz, matchResult):
+    neighbours = []
+    for it in matchResult:
+        if indIm == it["imI"] and indPz == it["i"]:
+            neighbours.append([it["si"], it["imJ"], it["j"], it["sj"], it["diff"]])
+        if indIm == it["imJ"] and indPz == it["j"]:
+            neighbours.append([it["sj"], it["imI"], it["i"], it["si"], it["diff"]])
+        # 0=side index, 1=image index, 2=puzzle index, 3=side index, 4=diff
+        # возвращаем всех соседей, которых нашли для этого пазла
+    return neighbours
+
+def getDeltaPos(ind):
+    return {
+        0: (-1, 0),
+        1: (0, -1),
+        2: (1, 0),
+        3: (0, 1),
+    }.get(ind)
+
+# pos - позиция, где находится новый элемент относительно старого
+# ind - какой стороной новый элемент граничит
+def getSideShift(posOld, ind):
+    #shift = 6-posOld
+    #return (shift-ind)%4
+    shift = 6 if posOld == 0 else posOld+2
+    return (shift-ind)%4
+
+def checkIsAlreadyProcessed(val, alreadyProcess):
+    for it in alreadyProcess:
+        if val[0] == it[0] and val[1] == it[1] and val[2] == it[2]:
+            return True
+    return False
+
+class Field:
+    def __init__(self):
+        #self.arr = np.matrix(size=(100,100), dtype=int)
+        self.arr = np.zeros([100,100], dtype=int)
+        self.shiftX = 50
+        self.shiftY = 50
+        self.lastIndex = 1
+
+    def add(self, x, y):
+        #print("--------- x=%d y=%d   (%d, %d )" % (x,y, x+self.shiftX, y+self.shiftY))
+        self.arr[y+self.shiftY][x+self.shiftX]=self.lastIndex
+        self.lastIndex += 1
+
+    def print(self):
+        #print(self.arr.shape[0], self.arr.shape[1])
+        #print("lastIndex: ", self.lastIndex)
+        minX, maxX, minY, maxY = (self.shiftX*2, 0, self.shiftX*2, 0)
+        for j in range(self.arr.shape[0]):
+            for i in range(self.arr.shape[1]):
+                if self.arr[j][i] != 0:
+                    minX = min(minX, i)
+                    maxX = max(maxX, i)
+                    minY = min(minY, j)
+                    maxY = max(maxY, j)
+        #print("minX %d, maxX %d, minY %d, maxY %d" % (minX, maxX, minY, maxY))
+        for j in range(minY, maxY+1):
+            for i in range(minX, maxX+1):
+                #print(self.arr[j][i], end ='', sep='')
+                if self.arr[j][i] == 0:
+                    print(" ", end ='', sep='')
+                #else:
+                #    print(self.arr[j][i], end ='', sep='')
+                elif self.arr[j][i] == self.lastIndex-1:
+                    print("o", end ='', sep='')
+                else:
+                    print("X", end ='', sep='')
+            print()
+
+def makeAllPicture(images, puzzles, matchResult):
+    alreadyProcess = []
+    field = [[0, 0]]
+    f = Field()
+    f.add(0, 0)
+    fe = matchResult[0]
+    currentArray = [ [ 0, fe["imI"], fe["i"], 0, 0, 0, 0 ]]#pos (0, 0)
+    #currentArray = [ matchResult[0] ]
+    while len(currentArray) > 0:
+        newArray = []
+        print( "process array size:", len(currentArray))
+        # currentArray - текущий массив пазлов для которых мы ищем соседей
+        for it in currentArray:
+            glX, glY = it[4], it[5]
+            srcShift = it[6]
+            # нашли соседей для одного пазла - надо проверить
+            neighbours = getNeighbours(it[1], it[2], matchResult)
+            # 1) у нас может быть несколько вариантов на одну сторону - надо проигнорировать те, где уже установили
+            # 2) там уже может что то cтоять
+            processSides = []
+            for j in neighbours:
+                # neighbours: it["sj"], it["imI"], it["i"], it["si"], it["diff"]
+                # 0 для какой стороны пред/ 1 инд изображение / 2 инд пазла / 3 номер стороны текщий/ 4 разница
+                # TODO: 3 - и вот сюда уже надо плюсовать поворот исходного пазла
+                # it[0] - исходная сторона которая предыдущего пазла была использована ранее, уже с учетом поворота(отрисовка)
+                # it[3] - это предыдущее j[3]
+                # it[6] - это предыдущий sideShift = getSideShift(sideInd, it[3])
+                # TODO: а должна быть сумма всех предыдущих поворотов
+                # j[0] - source side index
+                # j[3] - destination side index
+                # 0=side index, 1=image index, 2=puzzle index, 3=side index, 4=diff
+                sideInd = (j[0]+srcShift)%4
+                # + нужна проверка что с этой стороны уже не стоит пазл
+                if checkIsAlreadyProcessed([sideInd, j[1], j[2]], alreadyProcess) or (sideInd in processSides):
+                    continue
+                dx, dy = getDeltaPos(sideInd)
+                # sideShift - насколько новый элемент надо будет повернуть
+                sideShift = getSideShift(sideInd, j[3])#it[3])
+                x, y = glX+dx, glY+dy
+                #print("old %d new %d rotate %d" % (sideInd, j[3], sideShift))
+                print("imI=%d imJ=%d   glX=%d glY=%d dx=%d dy=%d    src shift %d  old/new si %d/%d  = old/new sj" % 
+                      (it[1],j[1], glX,glY, dx,dy, sideInd, j[3], sideShift))#srcShift, j[0], sideInd ))
+                if [x,y] in field:
+                    continue
+
+                print("neighbour:", j)
+                dataForDraw = {"diff" : j[4],
+                    "i" : it[2], "j" : j[2],# index puzzle
+                    "si" : j[0], "sj" : j[3],
+                    "imI" : it[1], "imJ" : j[1] }
+
+                alreadyProcess.append( [sideInd, j[1], j[2]] )#
+                field.append([x, y])
+                f.add(x, y)
+                processSides.append(sideInd)
+                #newArray.append(j)
+                f.print()
+                if not draw(images, puzzles, dataForDraw):
+                    return
+                
+                # j[1] - индекс изображения
+                # j[2] - индекс пазла
+                # j[3] - индекс стороны
+                # TODO: j[3] заменить на sideShift?
+                newArray.append([sideInd, j[1], j[2], j[3], x, y, sideShift])
+
+            #neighbours.append([it["si"], it["imJ"], it["j"], it["sj"], it["diff"]])
+            #neighbours.append([it["sj"], it["imI"], it["i"], it["si"], it["diff"]])
+            #print(neighbours)
+        f.print()
+        #print(field)
+        currentArray = newArray
 
 def drawContour(img, cont, color, radius):
     for p in cont:
         cv2.circle(img, p, radius, color, -1)
 
-def draw(images, puzzles, result):
-    for it in result:
-        cont1 = puzzles[it["i"]].sides[it["bi"]].points
-        cont2 = puzzles[it["j"]].sides[it["bj"]].points
+def draw(images, puzzles, it):
+    #for it in result:
+        cont1 = puzzles[it["i"]].sides[it["si"]].points
+        cont2 = puzzles[it["j"]].sides[it["sj"]].points
 
         bin1 = images[it["imI"]]
         img1 = cv2.cvtColor(bin1, cv2.COLOR_GRAY2BGR)
@@ -255,12 +404,13 @@ def draw(images, puzzles, result):
         drawContour(img1, cont1, (0, 255, 0), 5)
         drawContour(img2, cont2, (0, 0, 255), 5)
         print(it["diff"])
-        cv2.imshow("Puzzle Connections", img1)
+        cv2.imshow("src", img1)
         if it["imI"] != it["imJ"]:
-            cv2.imshow("Puzzle Connections2", img2)
+            cv2.imshow("new", img2)
         ch = cv2.waitKey(0)
         if ch == 27:
-            break
+            return False
+        return True
 
 def main(paths):
     puzzles = []
@@ -276,13 +426,15 @@ def main(paths):
         images.append(bin)
 
     result = matchPuzzles(puzzles)
-    print( len(puzzles), len(result))
-    draw(images, puzzles, result)
+    print( "Count puzzles:", len(puzzles), "count matched:", len(result))
+    makeAllPicture(images, puzzles, result)
+    #for it in result:
+    #    draw(images, puzzles, it)
 
     cv2.destroyAllWindows()
 
-images = ["00.png", "01.png", "02.png"]
+images = ["03.png", "04.png", "05.png"]
 cv2.namedWindow('img', 0)
-cv2.namedWindow('Puzzle Connections', 0)
-cv2.namedWindow('Puzzle Connections2', 0)
+cv2.namedWindow('src', 0)
+cv2.namedWindow('new', 0)
 main(images)
